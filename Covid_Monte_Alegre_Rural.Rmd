@@ -1,0 +1,302 @@
+---
+title: "A1 - R para ciencia de dados"
+author: "Luiz Fernando Souza Luz"
+date: "4/13/2023"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+# Casos de Covid-19 na zona Rural de Monte Alegre-PA
+
+## Contexto
+
+A cidade de Monte Alegre, localizada no estado do Pará, foi uma das regiões afetadas pela pandemia de COVID-19. Como forma de contribuir com o combate ao vírus e conscientizar a população local sobre a importância das medidas preventivas, desenvolvi um projeto de visualização dos casos de COVID-19 na cidade.
+
+Coletando os dados a partir dos relatórios diários da prefeitura, priorizei o mapeamento dos casos na zona rural, onde muitas vezes o acesso à informação e aos serviços de saúde é mais limitado. Além disso, para a obtenção dos dados de geolocalização, utilizei o Google Maps e fiz a coleta manualmente.
+
+Por meio da apresentação visual dos dados, busquei fornecer informações relevantes para identificar regiões que estavam em situações críticas. Ademais, o mapa consegue mostrar como estava a situação nas áreas mais remotas do município.
+
+## Carregamento do Pacotes
+
+Antes de iniciar a instalação dos pacotes necesários projetos, faz-se necessário instalar o JAVA na máquina.
+
+[Faça o download do JAVA aqui](https://www.java.com/en/download/manual.jsp%5D)
+
+Fique atento e escolha a arquitetura correta do seu sistema (provavelmente será 64 bits).
+
+```{r}
+# Instalando Knitr se não tiver disponível
+if (!("knitr" %in% installed.packages()[, "Package"])){
+  install.packages(("knitr"))
+}
+
+# Comando para evitar a aparição de warnings no Markdown
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+```{r warning=FALSE}
+
+# lista de pacotes necessários para o projeto 
+packages <- c("ggplot2", "ggpubr", "lubridate", "dplyr", "plotly", "ggrepel", "OpenStreetMap", "ggspatial","kableExtra", "knitr", "rJava")
+
+# Lista de pacotes que tinão estão na máquina
+filter_not_installed <- !(packages %in% installed.packages()[, "Package"])
+new.packages <- packages[filter_not_installed]
+
+# Instalando pacotes que não estão na máquina (Comando pode demorar alguns minutos)
+if (length(new.packages)) install.packages(new.packages, dependencies=TRUE)
+
+
+# Carregando pacotes
+library(ggplot2)
+library(ggpubr)
+library(lubridate)
+library(dplyr)
+library(plotly)
+library(ggrepel)
+library(ggspatial)
+library(OpenStreetMap)
+library(kableExtra)
+```
+
+## Carregando dados
+
+```{r}
+#ALTERA AQUI A PASTA COM A BASE DE DADOS
+root_path <- "D:/OneDrive/Documentos/Estudos/Covid-Monte-Alegre-PA/Dados/"
+```
+
+```{r warning=FALSE}
+# Base com dados de covid de cada comunidade Rural da cidade Monte Alegre PA
+dadosRural <- read.csv2(
+  paste(root_path, "CasosRural.csv", sep = ""),
+  encoding = "UTF-8")
+names(dadosRural)[1] <- "Comunidade"
+
+# convert to date type
+dadosRural$Data = as.Date(dadosRural$Data, format = "%d/%m/%Y")
+# Obtendo o último dia que teve atualização dos dados
+ultimo_dia <- max(dadosRural$Data)
+
+# Base com a geolocalização de cada comunidade Rural do Município
+coordenandasRural <- read.csv2(
+  file = paste(root_path, "coordrural.csv", sep = ""),
+  header = TRUE,
+  encoding = "UTF-8")
+# ALterando o nome da colunas
+names(coordenandasRural)[1] <- "Comunidade"
+names(coordenandasRural)[2] <- "Latitude"
+names(coordenandasRural)[3] <- "Longitude"
+
+
+# Base com os dados de Covid de todo o município de Monte Alegre
+covidmta <- read.csv2(
+  paste(root_path, "casos mta.csv", sep = ""),
+  encoding = "UTF-8")
+
+# Alerando nome da coluna
+names(covidmta)[1] <- "Data"
+# Convertando para o tipo data
+covidmta$Data <- as.Date(covidmta$Data, format = "%d/%m/%Y")
+# Obtendo o total de obitos e casos até a última data de registro
+CasosDoDia <- covidmta$Casos[covidmta$Data == ultimo_dia]
+ObitosDoDia <- covidmta$Obitos[covidmta$Data == ultimo_dia]
+```
+
+### Sobre a coleta de dados
+
+Os dados relacionados aos casos de Covid-19 foram coletados no [Portal da Prefeitura de Monte Alegre-PA](http://www.montealegre.pa.gov.br/).
+
+No portal, não há dados estruturados dos casos, logo foi necessário popular manualmente uma planilha no Excel com os casos de Covid.
+
+Sobre as coordenadas geográficos das comunidades rurais, não existem dados estruturados na internet sobre esse tema. Diante diso, usando a interface do Google Maps, foi populada uma planilha no Excel com esses dados.
+
+## Tratamento dos dados
+
+```{r, results='asis'}
+# Converte os dados de inteiros para numéricos. Esse tratamento permite a compatibildade com o geom_point()
+dadosRural$Casos <- as.numeric(dadosRural$Casos)
+dadosRural$Obitos <- as.numeric(dadosRural$Obitos)
+
+dadosRural$Casos.M <- as.numeric(dadosRural$Casos.M)
+dadosRural$Casos.F <- as.numeric(dadosRural$Casos.F)
+
+dadosRural$Obitos.M <- as.numeric(dadosRural$Obitos.M)
+dadosRural$Obitos.F <- as.numeric(dadosRural$Obitos.F)
+
+# Conversão da Latitude e Longitude para float
+coordenandasRural$Longitude <- as.numeric(gsub(",", ".", coordenandasRural$Longitude))
+coordenandasRural$Latitude <- as.numeric(gsub(",", ".", coordenandasRural$Latitude))
+
+# Une os dados de covid com a localização das comunidades
+ruralmap <- left_join(dadosRural, coordenandasRural, by = "Comunidade")
+
+# Removendo os NaN da união das bases
+ruralmap = na.omit(ruralmap)
+
+cat("Dados após o pré-processamento")
+ruralmap %>%
+  head(5) %>%
+  kbl() %>%
+  kable_styling(bootstrap_options = "striped", font_size = 7)
+
+```
+
+## Casos de covid por comunidade rural
+
+```{r, fig.height=7.7, fig.width=8.8, warning=FALSE, dpi=600}
+
+# Filtrando os dados apenas do ultimo dia de registro da base
+dados_ultimo_dia <- dadosRural %>% filter(Data == ultimo_dia)
+
+# Criando grafico de barras
+barras <- dados_ultimo_dia %>%
+  # Adicionando o grafico de barras com casos por comunidade
+  ggplot(
+    color = "black",
+    aes(
+      y = reorder(Comunidade, Casos), # Ordenando barras de forma descendent
+      x = Casos, 
+      fill = Casos # Alterando a cor da barra de acordo com o numero de casos
+    ),
+    height=1000
+  ) +
+  geom_bar(stat = "identity") +
+  # Definindo escala de cores com range de 0 a 200
+  scale_fill_gradientn(
+    colors = c("yellow", "red", "black", "black"),
+    limits = c(0, 200)
+  ) +
+  # Removendo rotulos dos eixos
+  ylab(NULL) +
+  xlab(NULL) +
+  # Adicionando titulo
+  ggtitle("Número de Casos - Zona Rural") +
+  # Adicionando o valor numerico no topo de cada barra
+  geom_text(aes(label = Casos), nudge_x = 1, size = 3.5) +
+  # Removendo textos desnecessários para o gráfico
+  theme(
+    axis.title.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.x = element_blank(),
+    legend.key = element_blank()
+  )
+
+
+barras
+
+```
+
+Neste gráfico de barras estão os caso de Covid-19 separado por comunidade Rural de acordo com a última atualização da nossa base de dados(23-07-2020)
+
+## Mapa dos casos de covid por comunidade Rural
+
+```{r fig.width=8.8, fig.height=7.7, warning=FALSE, dpi=600}
+
+# Obtem a quantidade de comunidade que temos na base
+num_comunidades <- length(dados_ultimo_dia$Comunidade)
+
+# Filtra apenas os dados do último dia de registros
+dados_ultimo_dia <- ruralmap %>%
+  filter(Data == ultimo_dia)
+
+# Baixando o mapa da região rural de monte alegre
+rural= openmap(
+  c(-1.232,-53.9072),
+  c(-2.307,-54.5609),
+  type = "osm"
+)
+
+
+# Converte o mapa para formato compatível com ggplot2
+map.latlon <- openproj(rural, projection = "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
+
+
+plot <- autoplot.OpenStreetMap(map.latlon) + # Adiciona o mapa como uma camada do mapa
+  # Adicionando os pontos onde estão as comunidade
+  geom_point(
+    data = dados_ultimo_dia, inherit.aes = FALSE, 
+    aes(size = Casos, color = Casos, # O tamanho e a cor dos pontos mudam de acordo com o número de casos
+    y = Latitude, x = Longitude), # Coordenada da comunidade no mapa
+    show.legend = FALSE
+  ) +
+  # Ajustando as dimensões do gráfico
+  scale_size(limits = c(0, 200), range = c(0, 10)) + 
+  # Definindo a escala de cores dos pontos 
+  scale_color_gradientn(
+    colors = c("yellow", "red", "black", "black"), # cores da escala
+    limits = c(0, 200) # Range que a escala deve se basear
+  ) + 
+  # Adicionando uma label com o nome da comunidade em cada ponto
+  geom_label_repel(
+    data = dados_ultimo_dia,
+    aes(label = Comunidade, x = Longitude, y = Latitude),
+    force = 20, # Definindo o quanto as labels devem evitar o overlapping
+    point.padding = 0.2, 
+    label.padding = 0.1, 
+    size = 2.5, # Tamanho da label
+    box.padding = unit(0.5, "lines")
+  ) +
+  # Adicionando o titulo do grafico com base no ultimo dia de registro
+  ggtitle(paste("Panorama de", ultimo_dia, "- Monte Alegre-PA")) +
+  # Adicionando dados com o cenário geral da zona rural
+  geom_label(
+    aes(y = -1.232, x = -54.9072, label = paste("Casos:", CasosDoDia, "Óbitos:", ObitosDoDia, sep="\n")), 
+    nudge_x = 0.41, nudge_y = -0.085) +
+  # Ajustando para não mostrar informações não desejado no plot
+  theme(
+    axis.title.x = element_blank(), # Removendo titulo do eixo x
+    axis.title.y = element_blank(), # Removendo titulo do eixo y 
+    axis.ticks.x = element_blank(), # Removendo numeros do eixo x
+    axis.ticks.y = element_blank(), # Removendo numeros do eixo y
+    axis.text.y = element_blank(),  # Removendo texto do eixo y
+    axis.text.x =  element_blank(), # Removendo texto do eixo x
+    legend.position = "none", # Removendo legenda
+    legend.box = "none" # Removendo caixa da legenda
+  )
+
+plot(plot)
+
+```
+
+Nessa visão, é possível ver um recorte do município de Monte Alegre-PA e suas principais comunidades.
+
+Em cada local, está um ponto que tem o tamanho de acordo com o nível de contaminação do local. Além disso, a cor dos pontos varia de amarelo até vermelho, indicando a quantidade de contaminados.
+
+## Unificando os dois gráficos
+
+```{r fig.width=8.8, fig.height=7.7, warning=FALSE, dpi=600}
+
+# Unindo os dois gráficos feitos anteriormente
+subplots <- ggarrange(plot,
+  barras,
+  common.legend = TRUE,
+  legend = "left",
+  ncol = 2
+)
+plot(subplots)
+
+```
+
+Neste plot, é possível obter um panorama geral do município. O gráfico a esquerda enfatiza a localização geográfica e o nível de contaminação. Enquanto que, a visão a direita foca na percepção quantitativa dos casos.
+
+## Salvando Visualização em PNG
+
+```{r warning=FALSE}
+
+ggsave(paste("Panorama-Rural", ultimo_dia, ".png"), subplots,
+  dpi = 600,
+  path = root_path,
+  width = 8.8, height = num_comunidades * 0.121
+)
+```
+
+
+
+## Referências
+
+PREFEITURA DE MONTE ALEGRE. Prefeitura Municipal de Monte Alegre, ano. Disponível em:[http://www.montealegre.pa.gov.br/](http://www.montealegre.pa.gov.br/). Acesso em: 13, 04, 2023
+
+
+TORTOSA-ANDREAU, Abel, Plot over OpenStreetMap with ggplot2. Linkedin, 14, 06, 2017. Disponível em: [Plot over OpenStreetMap with ggplot2](https://www.linkedin.com/pulse/plot-over-openstreetmap-ggplot2-abel-tortosa-andreu/). Acesso em: 13/04/2023.
